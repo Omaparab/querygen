@@ -3,6 +3,7 @@
 import { Sidebar } from '@/components/sidebar'
 import { Copy, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import { useAuth } from '@/hooks/use-auth'
 
 interface HistoryItem {
   id: string
@@ -57,8 +58,17 @@ function formatTime(date: Date) {
 }
 
 export default function History() {
+  const { isLoading } = useAuth()
   const [history, setHistory] = useState<HistoryItem[]>(DUMMY_HISTORY)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="text-foreground">Loading...</div>
+      </div>
+    )
+  }
 
   const handleCopy = (id: string, query: string) => {
     navigator.clipboard.writeText(query)

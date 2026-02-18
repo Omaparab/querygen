@@ -2,10 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Database, History, Settings, BarChart3 } from 'lucide-react'
+import { Home, Database, History, Settings, BarChart3, LogOut } from 'lucide-react'
+import { useSession, signOut } from 'next-auth/react'
 
 export function Sidebar() {
   const pathname = usePathname()
+  const { data: session } = useSession()
 
   const links = [
     { href: '/', label: 'Query', icon: Home },
@@ -45,9 +47,24 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* Footer */}
-        <div className="border-t border-border px-6 py-4">
-          <p className="text-xs text-muted-foreground">v1.0.0</p>
+        {/* User info and logout */}
+        <div className="border-t border-border px-6 py-4 space-y-4">
+          {session?.user && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Logged in as</p>
+              <p className="text-sm font-medium truncate">{session.user.name}</p>
+              <p className="text-xs text-muted-foreground truncate">
+                {session.user.email}
+              </p>
+            </div>
+          )}
+          <button
+            onClick={() => signOut({ redirect: true, callbackUrl: '/login' })}
+            className="w-full flex items-center gap-2 border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary transition-colors"
+          >
+            <LogOut size={16} />
+            Sign Out
+          </button>
         </div>
       </div>
     </aside>

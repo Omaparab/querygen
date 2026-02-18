@@ -2,12 +2,22 @@
 
 import { Sidebar } from '@/components/sidebar'
 import { useState } from 'react'
+import { useAuth } from '@/hooks/use-auth'
 
 export default function Settings() {
+  const { isLoading } = useAuth()
   const [theme, setTheme] = useState('dark')
   const [apiKey, setApiKey] = useState('***')
   const [autoSave, setAutoSave] = useState(true)
   const [notifications, setNotifications] = useState(true)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="text-foreground">Loading...</div>
+      </div>
+    )
+  }
 
   const handleThemeChange = (newTheme: string) => {
     setTheme(newTheme)

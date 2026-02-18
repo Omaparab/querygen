@@ -3,6 +3,8 @@
 import { Sidebar } from '@/components/sidebar'
 import { useState, useRef, useEffect } from 'react'
 import { Send } from 'lucide-react'
+import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 
 interface Message {
   id: string
@@ -18,6 +20,8 @@ const DUMMY_QUERIES = [
 ]
 
 export default function Home() {
+  const { data: session, status } = useSession()
+  const router = useRouter()
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -29,6 +33,12 @@ export default function Home() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login')
+    }
+  }, [status, router])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -64,6 +74,18 @@ export default function Home() {
       setMessages((prev) => [...prev, assistantMessage])
       setIsLoading(false)
     }, 1000)
+  }
+
+  if (status === 'loading') {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="text-foreground">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return null
   }
 
   return (

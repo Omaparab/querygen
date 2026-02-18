@@ -2,6 +2,7 @@
 
 import { Sidebar } from '@/components/sidebar'
 import { Activity, TrendingUp, Zap, Target } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 
 const STATS = [
   {
@@ -79,6 +80,16 @@ const RECENT_LOGS = [
 ]
 
 export default function Dashboard() {
+  const { isLoading } = useAuth()
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="text-foreground">Loading...</div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-screen bg-background">
       <Sidebar />

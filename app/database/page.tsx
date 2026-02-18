@@ -3,6 +3,7 @@
 import { Sidebar } from '@/components/sidebar'
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 
 const TABLES = {
   users: [
@@ -23,8 +24,17 @@ const TABLES = {
 }
 
 export default function Database() {
+  const { isLoading } = useAuth()
   const [expandedTable, setExpandedTable] = useState<string | null>(null)
   const tableNames = Object.keys(TABLES)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="text-foreground">Loading...</div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-screen bg-background">
