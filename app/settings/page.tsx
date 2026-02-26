@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/use-auth'
 export default function Settings() {
   const { isLoading } = useAuth()
   const [theme, setTheme] = useState('dark')
-  const [apiKey, setApiKey] = useState('***')
+  const [apiKey, setApiKey] = useState('')
   const [autoSave, setAutoSave] = useState(true)
   const [notifications, setNotifications] = useState(true)
 
@@ -77,14 +77,14 @@ export default function Settings() {
                 <div>
                   <label className="block text-sm font-semibold">API Key</label>
                   <input
-                    type="password"
+                    type="text"
                     value={apiKey}
-                    readOnly
+                    onChange={(e) => setApiKey(e.target.value)}
                     className="mt-2 w-full border border-border bg-input px-4 py-2"
                   />
                 </div>
                 <button className="border border-primary bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90">
-                  Regenerate Key
+                  Submit URL
                 </button>
               </div>
             </div>
