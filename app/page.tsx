@@ -1,91 +1,111 @@
-'use client'
+"use client";
 
-import { Sidebar } from '@/components/sidebar'
-import { useState, useRef, useEffect } from 'react'
-import { Send } from 'lucide-react'
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { Sidebar } from "@/components/sidebar";
+import { useState, useRef, useEffect } from "react";
+import { Send } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 interface Message {
-  id: string
-  type: 'user' | 'assistant'
-  content: string
-  timestamp: Date
+  id: string;
+  type: "user" | "assistant";
+  content: string;
+  timestamp: Date;
 }
 
-const DUMMY_QUERIES = [
-  'SELECT * FROM users WHERE created_at > DATE_SUB(NOW(), INTERVAL 30 DAY);',
-  'SELECT users.id, users.name, COUNT(orders.id) as order_count FROM users LEFT JOIN orders ON users.id = orders.user_id GROUP BY users.id;',
-  'UPDATE products SET stock = stock - 1 WHERE id = 42 AND stock > 0;',
-]
-
 export default function Home() {
-  const { data: session, status } = useSession()
-  const router = useRouter()
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: '1',
-      type: 'assistant',
-      content: 'Hello! I\'m QueryGen, your AI-powered MySQL query builder. Describe what data you need, and I\'ll generate the SQL for you.',
+      id: "1",
+      type: "assistant",
+      content:
+        "Hello! I'm QueryGen, your AI-powered MySQL query builder. Describe what data you need, and I'll generate the SQL for you.",
       timestamp: new Date(),
     },
-  ])
-  const [input, setInput] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  ]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login')
+    if (status === "unauthenticated") {
+      router.push("/login");
     }
-  }, [status, router])
+  }, [status, router]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    scrollToBottom();
+  }, [messages]);
 
-  const handleSend = () => {
-    if (!input.trim()) return
+  const handleSend = async () => {
+    if (!input.trim()) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      type: 'user',
+      type: "user",
       content: input,
       timestamp: new Date(),
-    }
+    };
 
-    setMessages((prev) => [...prev, userMessage])
-    setInput('')
-    setIsLoading(true)
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setIsLoading(true);
 
-    // Simulate API response
-    setTimeout(() => {
-      const randomQuery = DUMMY_QUERIES[Math.floor(Math.random() * DUMMY_QUERIES.length)]
+    const schema = `users(id, email), query_sessions(session_id, user_id, started_at, ended_at), nl_query_history(history_id, user_id, query_text, session_id, created_at), generated_sql(sql_id, history_id, sql_text, is_valid, generated_at, executed), sql_approvals(approval_id, sql_id, user_id, approval_status, approved_at), audit_logs(log_id, user_id, history_id, generated_sql, approval_status, execution_status, logged_at), feedback(feedback_id, history_id, rating, comments, submitted_at), schema_metadata(table_name, column_name, data_type, is_primary_key, is_foreign_key), performance_metrics(metric_id, exact_match_accuracy, logical_accuracy, execution_accuracy, precision, recall, f1_score, recorded_at), url_history(user_id, database_url)`;
+
+    try {
+      const response = await fetch("http://localhost:8000/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: input,
+          schema: schema,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: `Here's the SQL query for your request:\n\n${randomQuery}`,
+        type: "assistant",
+        content: `Here's the SQL query for your request:\n\n${data.output}`,
         timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, assistantMessage])
-      setIsLoading(false)
-    }, 1000)
-  }
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error("Error fetching query:", error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        type: "assistant",
+        content: "Sorry, I encountered an error while generating the query.",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  if (status === 'loading') {
+  if (status === "loading") {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-foreground">Loading...</div>
       </div>
-    )
+    );
   }
 
   if (!session) {
-    return null
+    return null;
   }
 
   return (
@@ -108,16 +128,14 @@ export default function Home() {
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex gap-4 ${
-                  message.type === 'user' ? 'justify-end' : 'justify-start'
-                }`}
+                className={`flex gap-4 ${message.type === "user" ? "justify-end" : "justify-start"
+                  }`}
               >
                 <div
-                  className={`max-w-2xl px-4 py-3 ${
-                    message.type === 'user'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'border border-border bg-secondary text-foreground'
-                  }`}
+                  className={`max-w-2xl px-4 py-3 ${message.type === "user"
+                    ? "bg-primary text-primary-foreground"
+                    : "border border-border bg-secondary text-foreground"
+                    }`}
                 >
                   <p className="whitespace-pre-wrap text-sm leading-relaxed">
                     {message.content}
@@ -148,7 +166,7 @@ export default function Home() {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                onKeyPress={(e) => e.key === "Enter" && handleSend()}
                 placeholder="Describe the data you need..."
                 className="flex-1 border border-border bg-input px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               />
@@ -164,5 +182,5 @@ export default function Home() {
         </div>
       </main>
     </div>
-  )
+  );
 }
