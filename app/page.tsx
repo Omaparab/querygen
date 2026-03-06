@@ -6,6 +6,7 @@ import { Send } from 'lucide-react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { saveNLQuery } from "@/app/api/backend/query";
+import { getDynamicSchema } from "@/app/api/backend/database";
 
 
 
@@ -64,7 +65,29 @@ export default function Home() {
     setInput("");
     setIsLoading(true);
 
-    const schema = `users(id, email), query_sessions(session_id, user_id, started_at, ended_at), nl_query_history(history_id, user_id, query_text, session_id, created_at), generated_sql(sql_id, history_id, sql_text, is_valid, generated_at, executed), sql_approvals(approval_id, sql_id, user_id, approval_status, approved_at), audit_logs(log_id, user_id, history_id, generated_sql, approval_status, execution_status, logged_at), feedback(feedback_id, history_id, rating, comments, submitted_at), schema_metadata(table_name, column_name, data_type, is_primary_key, is_foreign_key), performance_metrics(metric_id, exact_match_accuracy, logical_accuracy, execution_accuracy, precision, recall, f1_score, recorded_at), url_history(user_id, database_url)`;
+    // Fetch dynamic schema from user's database
+    let schema = "";
+    try {
+      const schemaRes = await getDynamicSchema();
+      if (!schemaRes.success || !schemaRes.schema) {
+        throw new Error(schemaRes.error || "No schema found");
+      }
+      schema = schemaRes.schema;
+    } catch (err: any) {
+      console.error("Failed to fetch dynamic schema:", err);
+      // Fallback or abort? We'll abort since AI needs the schema to work correctly.
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          type: "assistant",
+          content: `Sorry, I couldn't connect to your database to read the schema. Please check your Database URL in Settings. Error: ${err.message}`,
+          timestamp: new Date(),
+        },
+      ]);
+      setIsLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch("http://localhost:8000/", {
