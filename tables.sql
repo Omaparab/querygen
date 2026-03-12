@@ -86,8 +86,9 @@ CREATE TABLE performance_metrics (
 
 -- User URLs for database 
 CREATE TABLE url_history (
+    id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id) ON DELETE CASCADE,
-    database_url TEXT PRIMARY KEY
+    database_url TEXT NOT NULL
 );
 
 

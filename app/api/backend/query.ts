@@ -19,6 +19,16 @@ export async function saveNLQuery(queryText: string, sessionId?: string) {
       throw new Error("User not found in database.");
     }
 
+    // Ensure a row exists in query_sessions for this session
+    if (sessionId) {
+      await pool.query(
+        `INSERT INTO query_sessions (session_id, user_id, started_at)
+         VALUES ($1, $2, CURRENT_TIMESTAMP)
+         ON CONFLICT (session_id) DO NOTHING`,
+        [sessionId, userId]
+      );
+    }
+
     const query = `
       INSERT INTO nl_query_history (user_id, query_text, session_id)
       VALUES ($1, $2, $3)

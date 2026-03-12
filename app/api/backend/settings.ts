@@ -21,12 +21,10 @@ export async function saveURL(url: string) {
       throw new Error("User not found in database.");
     }
 
-    // 3. Insert or Update the URL in the 'url_history' table
+    // 3. Insert the URL into the 'url_history' table
     const query = `
       INSERT INTO url_history (user_id, database_url) 
       VALUES ($1, $2) 
-      ON CONFLICT (database_url) 
-      DO UPDATE SET user_id = EXCLUDED.user_id
       RETURNING *;
     `;
 

@@ -174,12 +174,12 @@ export async function getDynamicSchema(): Promise<{ success: boolean; schema?: s
             tableSchema[table].push(column);
         }
 
-        // Format to: table_name(col1, col2), table2(col1)
+        // Format to: table_name: col1, col2 | table2: col1
         const formattedSchemaParts = Object.entries(tableSchema).map(([tableName, columns]) => {
-            return `${tableName}(${columns.join(', ')})`;
+            return `${tableName}: ${columns.join(', ')}`;
         });
 
-        const finalSchemaString = formattedSchemaParts.join(', ');
+        const finalSchemaString = formattedSchemaParts.join(' | ');
 
         return { success: true, schema: finalSchemaString };
     } catch (error: any) {
