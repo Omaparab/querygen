@@ -1,68 +1,70 @@
 'use client'
 
 import { Sidebar } from '@/components/sidebar'
-import { Copy, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import {
+  Copy,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  MessageSquare,
+  Clock,
+} from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/hooks/use-auth'
+import {
+  fetchHistory,
+  deleteQuery,
+  type SessionGroup,
+} from '@/app/api/backend/history'
 
-interface HistoryItem {
-  id: string
-  query: string
-  timestamp: Date
-  description: string
+function formatDate(raw: string) {
+  const d = new Date(raw)
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
-const DUMMY_HISTORY: HistoryItem[] = [
-  {
-    id: '1',
-    description: 'Get all users created in last 30 days',
-    query: 'SELECT * FROM users WHERE created_at > DATE_SUB(NOW(), INTERVAL 30 DAY);',
-    timestamp: new Date(Date.now() - 5 * 60000),
-  },
-  {
-    id: '2',
-    description: 'Count orders per user',
-    query:
-      'SELECT users.id, users.name, COUNT(orders.id) as order_count FROM users LEFT JOIN orders ON users.id = orders.user_id GROUP BY users.id;',
-    timestamp: new Date(Date.now() - 25 * 60000),
-  },
-  {
-    id: '3',
-    description: 'Update product stock',
-    query: 'UPDATE products SET stock = stock - 1 WHERE id = 42 AND stock > 0;',
-    timestamp: new Date(Date.now() - 60 * 60000),
-  },
-  {
-    id: '4',
-    description: 'Get expensive products',
-    query: 'SELECT * FROM products WHERE price > 100 ORDER BY price DESC;',
-    timestamp: new Date(Date.now() - 120 * 60000),
-  },
-  {
-    id: '5',
-    description: 'Find pending orders',
-    query: 'SELECT * FROM orders WHERE status = "pending" ORDER BY created_at ASC;',
-    timestamp: new Date(Date.now() - 180 * 60000),
-  },
-]
-
-function formatTime(date: Date) {
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-
-  if (minutes < 60) return `${minutes}m ago`
-  if (hours < 24) return `${hours}h ago`
-  return date.toLocaleDateString()
+/** Truncate text to a max length, adding ellipsis if needed */
+function truncate(text: string, max: number) {
+  if (text.length <= max) return text
+  return text.slice(0, max).trimEnd() + '…'
 }
 
 export default function History() {
-  const { isLoading } = useAuth()
-  const [history, setHistory] = useState<HistoryItem[]>(DUMMY_HISTORY)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const { isLoading: authLoading } = useAuth()
+  const [sessions, setSessions] = useState<SessionGroup[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [activeSession, setActiveSession] = useState<string | null>(null)
 
-  if (isLoading) {
+  const loadHistory = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetchHistory()
+      if (!res.success) throw new Error(res.error)
+      setSessions(res.sessions ?? [])
+      // Auto-select the most recent session
+      if (res.sessions && res.sessions.length > 0) {
+        setActiveSession(res.sessions[0].session_id)
+      }
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!authLoading) loadHistory()
+  }, [authLoading, loadHistory])
+
+  if (authLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-foreground">Loading...</div>
@@ -70,15 +72,36 @@ export default function History() {
     )
   }
 
-  const handleCopy = (id: string, query: string) => {
-    navigator.clipboard.writeText(query)
+  const handleCopy = (id: number, text: string) => {
+    navigator.clipboard.writeText(text)
     setCopiedId(id)
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  const handleDelete = (id: string) => {
-    setHistory(history.filter((item) => item.id !== id))
+  const handleDelete = async (historyId: number) => {
+    const res = await deleteQuery(historyId)
+    if (res.success) {
+      setSessions((prev) => {
+        const updated = prev
+          .map((s) => ({
+            ...s,
+            queries: s.queries.filter((q) => q.history_id !== historyId),
+          }))
+          .filter((s) => s.queries.length > 0)
+
+        // If the active session was removed, select the first remaining one
+        if (!updated.find((s) => s.session_id === activeSession)) {
+          setActiveSession(updated.length > 0 ? updated[0].session_id : null)
+        }
+
+        return updated
+      })
+    }
   }
+
+  const selectedSession = sessions.find(
+    (s) => s.session_id === activeSession
+  )
 
   return (
     <div className="flex h-screen bg-background">
@@ -93,49 +116,165 @@ export default function History() {
           </p>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-8 py-6">
-          <div className="max-w-4xl space-y-3">
-            {history.length === 0 ? (
-              <div className="border border-border border-dashed px-6 py-12 text-center">
-                <p className="text-muted-foreground">No query history yet</p>
+        {/* Two-panel content */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* ── Left panel: Session list ── */}
+          <div className="w-80 flex-shrink-0 border-r border-border overflow-y-auto">
+            {loading ? (
+              <div className="p-4 space-y-3">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="animate-pulse p-3">
+                    <div className="h-4 w-3/4 bg-secondary rounded" />
+                    <div className="mt-2 h-3 w-1/2 bg-secondary rounded" />
+                  </div>
+                ))}
+              </div>
+            ) : error ? (
+              <div className="p-6 text-center">
+                <p className="text-sm text-destructive">{error}</p>
+                <button
+                  onClick={loadHistory}
+                  className="mt-3 text-xs border border-border px-3 py-1.5 hover:bg-secondary"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="p-6 text-center">
+                <MessageSquare
+                  size={32}
+                  className="mx-auto text-muted-foreground mb-3"
+                />
+                <p className="text-sm text-muted-foreground">
+                  No sessions yet
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Submit queries on the home page to get started
+                </p>
               </div>
             ) : (
-              history.map((item) => (
-                <div key={item.id} className="border border-border p-6">
-                  <div className="mb-3 flex items-start justify-between">
-                    <div>
-                      <h3 className="font-semibold">{item.description}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {formatTime(item.timestamp)}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleCopy(item.id, item.query)}
-                        className={`p-2 transition-colors ${
-                          copiedId === item.id
-                            ? 'bg-primary text-primary-foreground'
-                            : 'border border-border hover:bg-secondary'
+              <div className="py-2">
+                {sessions.map((session) => {
+                  const isActive = activeSession === session.session_id
+                  const sessionName =
+                    session.queries[0]?.query_text ?? 'Untitled session'
+
+                  return (
+                    <button
+                      key={session.session_id}
+                      onClick={() => setActiveSession(session.session_id)}
+                      className={`w-full text-left px-4 py-3 transition-colors border-l-2 ${
+                        isActive
+                          ? 'bg-secondary border-l-primary'
+                          : 'border-l-transparent hover:bg-secondary/50'
+                      }`}
+                    >
+                      <p
+                        className={`text-sm leading-snug ${
+                          isActive ? 'font-semibold' : 'font-medium'
                         }`}
-                        title="Copy query"
                       >
-                        <Copy size={18} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        className="border border-border p-2 hover:bg-destructive/10"
-                        title="Delete"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </div>
-                  <pre className="overflow-x-auto border border-border bg-secondary p-4 font-mono text-xs leading-relaxed">
-                    {item.query}
-                  </pre>
+                        {truncate(sessionName, 60)}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
+                        <Clock size={12} />
+                        <span>{formatDate(session.started_at)}</span>
+                        <span className="text-border">·</span>
+                        <span>
+                          {session.queries.length}{' '}
+                          {session.queries.length === 1 ? 'query' : 'queries'}
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Right panel: Conversation detail ── */}
+          <div className="flex-1 overflow-y-auto">
+            {!selectedSession ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <MessageSquare size={48} className="mb-4 opacity-40" />
+                <p className="text-lg font-medium">
+                  {sessions.length === 0
+                    ? 'No query history yet'
+                    : 'Select a session'}
+                </p>
+                <p className="text-sm mt-1">
+                  {sessions.length === 0
+                    ? 'Your sessions will appear here'
+                    : 'Click a session on the left to view its queries'}
+                </p>
+              </div>
+            ) : (
+              <div className="max-w-3xl mx-auto px-8 py-6 space-y-4">
+                {/* Session title header */}
+                <div className="mb-6">
+                  <h2 className="text-xl font-semibold leading-snug">
+                    {truncate(
+                      selectedSession.queries[0]?.query_text ??
+                        'Untitled session',
+                      120
+                    )}
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Started {formatDate(selectedSession.started_at)} ·{' '}
+                    {selectedSession.queries.length}{' '}
+                    {selectedSession.queries.length === 1
+                      ? 'query'
+                      : 'queries'}
+                  </p>
                 </div>
-              ))
+
+                {/* Query cards */}
+                {selectedSession.queries.map((q, idx) => (
+                  <div
+                    key={q.history_id}
+                    className="border border-border rounded-sm"
+                  >
+                    {/* Query card header */}
+                    <div className="flex items-center justify-between px-4 py-3 bg-secondary/30">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
+                          {idx + 1}
+                        </span>
+                        <span>{formatDate(q.created_at)}</span>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() =>
+                            handleCopy(q.history_id, q.query_text)
+                          }
+                          className={`p-1.5 rounded-sm transition-colors ${
+                            copiedId === q.history_id
+                              ? 'bg-primary text-primary-foreground'
+                              : 'hover:bg-secondary border border-border'
+                          }`}
+                          title={
+                            copiedId === q.history_id ? 'Copied!' : 'Copy query'
+                          }
+                        >
+                          <Copy size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(q.history_id)}
+                          className="p-1.5 rounded-sm border border-border hover:bg-destructive/10 hover:text-destructive transition-colors"
+                          title="Delete query"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Query text */}
+                    <pre className="overflow-x-auto p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">
+                      {q.query_text}
+                    </pre>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>

@@ -70,6 +70,7 @@ CREATE TABLE schema_metadata (
     is_foreign_key BOOLEAN
 );
 
+
 -- Performance Metrics (Static table, no foreign keys)
 CREATE TABLE performance_metrics (
     metric_id SERIAL PRIMARY KEY,
@@ -85,10 +86,18 @@ CREATE TABLE performance_metrics (
 
 -- User URLs for database 
 CREATE TABLE url_history (
+    id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id) ON DELETE CASCADE,
-    database_url TEXT PRIMARY KEY
+    database_url TEXT NOT NULL
 );
 
+
+-- This checks if the record exists regardless of UI glitches
+SELECT * FROM nl_query_history;
+
+select * from users;
+
+select * from url_history;
 
 
 

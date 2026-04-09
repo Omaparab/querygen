@@ -1,34 +1,44 @@
 'use client'
 
 import { Sidebar } from '@/components/sidebar'
-import { useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { ChevronDown, ChevronRight, RefreshCw, AlertCircle, Database as DatabaseIcon } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
-
-const TABLES = {
-  users: [
-    { id: 1, name: 'John Doe', email: 'john@example.com', created_at: '2024-01-15' },
-    { id: 2, name: 'Jane Smith', email: 'jane@example.com', created_at: '2024-01-18' },
-    { id: 3, name: 'Bob Johnson', email: 'bob@example.com', created_at: '2024-02-01' },
-  ],
-  orders: [
-    { id: 101, user_id: 1, total: 250.50, status: 'completed', created_at: '2024-02-03' },
-    { id: 102, user_id: 2, total: 125.00, status: 'pending', created_at: '2024-02-04' },
-    { id: 103, user_id: 1, total: 89.99, status: 'completed', created_at: '2024-02-05' },
-  ],
-  products: [
-    { id: 1, name: 'Laptop', category: 'Electronics', price: 999.99, stock: 15 },
-    { id: 2, name: 'Mouse', category: 'Electronics', price: 29.99, stock: 150 },
-    { id: 3, name: 'Keyboard', category: 'Electronics', price: 79.99, stock: 45 },
-  ],
-}
+import { fetchTables, type TableInfo } from '@/app/api/backend/database'
 
 export default function Database() {
-  const { isLoading } = useAuth()
+  const { isLoading: authLoading } = useAuth()
   const [expandedTable, setExpandedTable] = useState<string | null>(null)
-  const tableNames = Object.keys(TABLES)
+  const [tables, setTables] = useState<TableInfo[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [databaseUrl, setDatabaseUrl] = useState<string | null>(null)
 
-  if (isLoading) {
+  const loadTables = async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const result = await fetchTables()
+      if (result.success && result.tables) {
+        setTables(result.tables)
+        setDatabaseUrl(result.databaseUrl || null)
+      } else {
+        setError(result.error || 'Failed to fetch tables')
+        setTables([])
+      }
+    } catch (err: any) {
+      setError(err.message || 'An unexpected error occurred')
+      setTables([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadTables()
+  }, [])
+
+  if (authLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-foreground">Loading...</div>
@@ -43,74 +53,146 @@ export default function Database() {
       <main className="ml-64 flex flex-1 flex-col">
         {/* Header */}
         <div className="border-b border-border bg-background px-8 py-6">
-          <h1 className="text-3xl font-bold tracking-tight">Database</h1>
-          <p className="mt-2 text-muted-foreground">View all tables and their data</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Database</h1>
+              <p className="mt-2 text-muted-foreground">
+                View all tables and their data
+              </p>
+              {databaseUrl && !isLoading && !error && (
+                <p className="mt-1 text-xs text-muted-foreground font-mono">
+                  Connected to: {databaseUrl}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={loadTables}
+              disabled={isLoading}
+              className="flex items-center gap-2 border border-border px-4 py-2 hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-8 py-6">
           <div className="max-w-6xl space-y-4">
-            {tableNames.map((tableName) => (
-              <div key={tableName} className="border border-border">
+            {/* Loading State */}
+            {isLoading && (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                <RefreshCw size={32} className="animate-spin mb-4" />
+                <p className="text-lg font-medium">Connecting to database...</p>
+                <p className="text-sm mt-1">Fetching tables and data</p>
+              </div>
+            )}
+
+            {/* Error State */}
+            {!isLoading && error && (
+              <div className="flex flex-col items-center justify-center py-20 border border-red-600/30 bg-red-600/5 p-8">
+                <AlertCircle size={32} className="text-red-500 mb-4" />
+                <p className="text-lg font-medium text-red-500">Connection Failed</p>
+                <p className="text-sm text-muted-foreground mt-2 text-center max-w-md">
+                  {error}
+                </p>
+                <p className="text-sm text-muted-foreground mt-4">
+                  Check your database URL in{' '}
+                  <a href="/settings" className="text-primary underline hover:text-primary/80">
+                    Settings
+                  </a>
+                </p>
+                <button
+                  onClick={loadTables}
+                  className="mt-4 border border-border px-4 py-2 hover:bg-secondary"
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+
+            {/* Empty State */}
+            {!isLoading && !error && tables.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                <DatabaseIcon size={32} className="mb-4" />
+                <p className="text-lg font-medium">No tables found</p>
+                <p className="text-sm mt-1">
+                  The connected database has no tables in the public schema.
+                </p>
+              </div>
+            )}
+
+            {/* Tables */}
+            {!isLoading && !error && tables.map((table) => (
+              <div key={table.tableName} className="border border-border">
                 {/* Table header */}
                 <button
                   onClick={() =>
                     setExpandedTable(
-                      expandedTable === tableName ? null : tableName
+                      expandedTable === table.tableName ? null : table.tableName
                     )
                   }
                   className="flex w-full items-center gap-4 border-b border-border bg-secondary px-6 py-4 hover:bg-primary/10"
                 >
-                  {expandedTable === tableName ? (
+                  {expandedTable === table.tableName ? (
                     <ChevronDown size={20} />
                   ) : (
                     <ChevronRight size={20} />
                   )}
                   <div className="flex-1 text-left">
                     <h2 className="font-semibold tracking-tight">
-                      {tableName}
+                      {table.tableName}
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                      {TABLES[tableName as keyof typeof TABLES].length} rows
+                      {table.rowCount} {table.rowCount === 1 ? 'row' : 'rows'} · {table.columns.length} columns
                     </p>
                   </div>
                 </button>
 
                 {/* Table data */}
-                {expandedTable === tableName && (
+                {expandedTable === table.tableName && (
                   <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-sm">
-                      <thead>
-                        <tr className="border-b border-border bg-secondary">
-                          {Object.keys(
-                            TABLES[tableName as keyof typeof TABLES][0]
-                          ).map((column) => (
-                            <th
-                              key={column}
-                              className="px-6 py-3 text-left font-semibold"
-                            >
-                              {column}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {TABLES[tableName as keyof typeof TABLES].map(
-                          (row, idx) => (
+                    {table.rows.length > 0 ? (
+                      <table className="w-full border-collapse text-sm">
+                        <thead>
+                          <tr className="border-b border-border bg-secondary">
+                            {table.columns.map((column) => (
+                              <th
+                                key={column}
+                                className="px-6 py-3 text-left font-semibold"
+                              >
+                                {column}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {table.rows.map((row, idx) => (
                             <tr
                               key={idx}
                               className="border-b border-border hover:bg-secondary/50"
                             >
-                              {Object.values(row).map((value, idx) => (
-                                <td key={idx} className="px-6 py-3">
-                                  {String(value)}
+                              {table.columns.map((column) => (
+                                <td key={column} className="px-6 py-3">
+                                  {row[column] === null
+                                    ? <span className="text-muted-foreground italic">NULL</span>
+                                    : String(row[column])}
                                 </td>
                               ))}
                             </tr>
-                          )
-                        )}
-                      </tbody>
-                    </table>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div className="px-6 py-8 text-center text-muted-foreground">
+                        This table has no data.
+                      </div>
+                    )}
+                    {table.rowCount > 100 && (
+                      <div className="px-6 py-3 text-sm text-muted-foreground border-t border-border bg-secondary/50">
+                        Showing first 100 of {table.rowCount} rows
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
