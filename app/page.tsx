@@ -13,6 +13,7 @@ import { saveNLQuery } from "@/app/api/backend/query";
 import { getDynamicSchema } from "@/app/api/backend/database";
 import { executeQuery, getPermissions, type QueryResult } from "@/app/api/backend/rbac";
 import { submitFeedback } from "@/app/api/backend/feedback";
+import { SqlBlock } from "@/components/sql-block";
 
 interface FeedbackState {
   status: "idle" | "thumbs_up" | "thumbs_down" | "submitted";
@@ -295,9 +296,7 @@ export default function Home() {
                         : "border border-border bg-secondary text-foreground w-full"
                     }`}
                   >
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed font-mono">
-                      {message.content}
-                    </p>
+                    <MessageContent content={message.content} isUser={message.type === "user"} />
 
                     {/* Execute button */}
                     {message.type === "assistant" && message.sql && (
@@ -380,6 +379,38 @@ export default function Home() {
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────
+
+/**
+ * Renders a message, splitting it into prose segments and highlighted SQL blocks.
+ * Handles ```sql ... ``` and ``` ... ``` fenced code blocks.
+ */
+function MessageContent({ content, isUser }: { content: string; isUser: boolean }) {
+  if (isUser) {
+    return <p className="whitespace-pre-wrap text-sm leading-relaxed">{content}</p>;
+  }
+
+  // Split on ```sql ... ``` or ``` ... ``` fences
+  const parts = content.split(/(```(?:sql)?\s*[\s\S]*?```)/gi);
+
+  return (
+    <div className="space-y-2 text-sm leading-relaxed">
+      {parts.map((part, i) => {
+        const fenceMatch = part.match(/^```(?:sql)?\s*([\s\S]*?)```$/i);
+        if (fenceMatch) {
+          return <SqlBlock key={i} code={fenceMatch[1]} />;
+        }
+        // Plain prose — only render if non-empty after trimming
+        const trimmed = part.trim();
+        if (!trimmed) return null;
+        return (
+          <p key={i} className="whitespace-pre-wrap text-foreground">
+            {trimmed}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
 
 function RoleBadge({ role }: { role: string }) {
   const config: Record<string, { label: string; className: string }> = {
