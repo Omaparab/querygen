@@ -4,6 +4,8 @@ import { Pool } from "pg";
 import pool from "./db";
 import { auth } from "@/auth";
 import { getConnectionUrl } from "./database";
+import { getPoliciesForRole } from "./rls";
+import { injectRowFilters } from "./rls-utils";
 
 export type UserRole = "admin" | "auditor_read" | "auditor_write" | "viewer";
 
@@ -54,6 +56,7 @@ export interface QueryResult {
   rows: Record<string, unknown>[];
   rowCount: number;
   rowsAffected?: number;
+  appliedPolicies?: string[];
 }
 
 export interface ExecuteResult {
@@ -106,11 +109,24 @@ export async function executeQuery(sql: string): Promise<ExecuteResult> {
       };
     }
 
+    // Inject row-level policies for SELECT queries
+    let finalSQL = sql;
+    let appliedPolicies: string[] = [];
+    if (queryType === "SELECT") {
+      const policies = await getPoliciesForRole(userInfo.role);
+      const rlsResult = injectRowFilters(sql, policies);
+      finalSQL = rlsResult.sql;
+      appliedPolicies = rlsResult.appliedPolicies;
+      if (appliedPolicies.length > 0) {
+        console.log(`🔒 RLS applied [${userInfo.role}]:`, appliedPolicies);
+      }
+    }
+
     // Connect to user's configured database
     const connectionUrl = await getConnectionUrl();
     userPool = new Pool({ connectionString: connectionUrl });
 
-    const result = await userPool.query(sql);
+    const result = await userPool.query(finalSQL);
 
     const columns = result.fields?.map((f) => f.name) ?? [];
     const rows = result.rows ?? [];
@@ -125,6 +141,7 @@ export async function executeQuery(sql: string): Promise<ExecuteResult> {
         rows,
         rowCount: rows.length,
         rowsAffected,
+        appliedPolicies,
       },
     };
   } catch (error: any) {
