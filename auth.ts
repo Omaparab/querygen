@@ -13,33 +13,49 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
+      }
+      // Always refresh role from DB on sign-in or explicit refresh
+      if (token.id !== undefined || trigger === "signIn" || trigger === "update") {
+        try {
+          const email = token.email;
+          if (email) {
+            const res = await pool.query(
+              "SELECT role FROM users WHERE email = $1",
+              [email]
+            );
+            token.role = res.rows[0]?.role ?? "viewer";
+          }
+        } catch {
+          token.role = "viewer";
+        }
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
+        session.user.role = (token.role as "admin" | "auditor_read" | "auditor_write" | "viewer") ?? "viewer";
       }
       return session;
     },
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account }) {
       if (account?.provider === "google") {
-        // Check if user exists in your Postgres DB
         const existingUser = await pool.query(
           "SELECT * FROM users WHERE email = $1",
-          [user.email],
+          [user.email]
         );
-        if (existingUser.rowCount == 0) {
-          // Manually insert the new user
-          await pool.query("INSERT INTO users (email) VALUES ($1)", [
-            user.email,
-          ]);
+        if (existingUser.rowCount === 0) {
+          // Insert new users with default role 'viewer'
+          await pool.query(
+            "INSERT INTO users (email, role) VALUES ($1, 'viewer')",
+            [user.email]
+          );
         }
       }
-      return true; // Allow sign in
+      return true;
     },
   },
 });

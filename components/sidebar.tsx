@@ -2,12 +2,31 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Database, History, Settings, BarChart3, LogOut } from 'lucide-react'
+import { Home, Database, History, Settings, BarChart3, LogOut, ShieldCheck } from 'lucide-react'
 import { useSession, signOut } from 'next-auth/react'
+
+type UserRole = "admin" | "auditor_read" | "auditor_write" | "viewer";
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  admin: "Admin",
+  auditor_read: "Auditor (RO)",
+  auditor_write: "Auditor (RW)",
+  viewer: "Viewer",
+};
+
+const ROLE_COLORS: Record<UserRole, string> = {
+  admin: "text-red-400 border-red-500/40",
+  auditor_write: "text-amber-400 border-amber-500/40",
+  auditor_read: "text-blue-400 border-blue-500/40",
+  viewer: "text-zinc-400 border-zinc-500/40",
+};
 
 export function Sidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
+
+  const role = ((session?.user as any)?.role ?? "viewer") as UserRole;
+  const isAdmin = role === "admin";
 
   const links = [
     { href: '/', label: 'Query', icon: Home },
@@ -15,6 +34,7 @@ export function Sidebar() {
     { href: '/history', label: 'History', icon: History },
     { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
     { href: '/settings', label: 'Settings', icon: Settings },
+    ...(isAdmin ? [{ href: '/admin', label: 'Admin Panel', icon: ShieldCheck }] : []),
   ]
 
   return (
@@ -30,13 +50,18 @@ export function Sidebar() {
         <nav className="flex-1 space-y-1 px-4 py-6">
           {links.map(({ href, label, icon: Icon }) => {
             const isActive = pathname === href
+            const isAdminLink = href === '/admin'
             return (
               <Link
                 key={href}
                 href={href}
                 className={`flex items-center gap-3 px-4 py-3 font-medium transition-colors ${
                   isActive
-                    ? 'bg-primary text-primary-foreground'
+                    ? isAdminLink
+                      ? 'bg-red-500/20 text-red-400'
+                      : 'bg-primary text-primary-foreground'
+                    : isAdminLink
+                    ? 'text-red-400/70 hover:bg-red-500/10 hover:text-red-400'
                     : 'text-foreground hover:bg-secondary'
                 }`}
               >
@@ -51,7 +76,12 @@ export function Sidebar() {
         <div className="border-t border-border px-6 py-4 space-y-4">
           {session?.user && (
             <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Logged in as</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground">Logged in as</p>
+                <span className={`text-xs font-semibold border px-2 py-0.5 rounded-full ${ROLE_COLORS[role]}`}>
+                  {ROLE_LABELS[role]}
+                </span>
+              </div>
               <p className="text-sm font-medium truncate">{session.user.name}</p>
               <p className="text-xs text-muted-foreground truncate">
                 {session.user.email}
