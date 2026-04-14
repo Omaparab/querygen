@@ -124,16 +124,18 @@ export default function Home() {
       // Save NL query and capture history_id for feedback
       let historyId: number | undefined;
       const saveResult = await saveNLQuery(queryText, sessionId.current);
-      if (saveResult.success && saveResult.data?.history_id) {
-        historyId = saveResult.data.history_id;
+      if (saveResult.success && saveResult.data?.insertId) {
+        historyId = saveResult.data.insertId;
       }
 
-      const rawSQL = extractSQL(data.output) ?? data.output;
+      // API returns { output: ["SELECT ..."] } — grab the first element
+      const sqlString: string = Array.isArray(data.output) ? data.output[0] : data.output;
+      const rawSQL = extractSQL(sqlString) ?? sqlString;
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: "assistant",
-        content: `Here's the SQL query for your request:\n\n\`\`\`sql\n${data.output}\n\`\`\``,
+        content: `Here's the SQL query for your request:\n\n\`\`\`sql\n${sqlString}\n\`\`\``,
         sql: rawSQL,
         historyId,
         timestamp: new Date(),
@@ -290,11 +292,10 @@ export default function Home() {
                 <div className={`max-w-3xl w-full ${message.type === "user" ? "flex justify-end" : ""}`}>
                   {/* Bubble */}
                   <div
-                    className={`px-4 py-3 ${
-                      message.type === "user"
-                        ? "bg-primary text-primary-foreground max-w-2xl"
-                        : "border border-border bg-secondary text-foreground w-full"
-                    }`}
+                    className={`px-4 py-3 ${message.type === "user"
+                      ? "bg-primary text-primary-foreground max-w-2xl"
+                      : "border border-border bg-secondary text-foreground w-full"
+                      }`}
                   >
                     <MessageContent content={message.content} isUser={message.type === "user"} />
 
@@ -325,7 +326,7 @@ export default function Home() {
                   )}
 
                   {/* Feedback panel */}
-                  {message.type === "assistant" && message.feedback && message.historyId && (
+                  {message.type === "assistant" && message.feedback && (
                     <FeedbackPanel
                       feedback={message.feedback}
                       onRate={rating => handleFeedback(message.id, rating)}
@@ -414,10 +415,10 @@ function MessageContent({ content, isUser }: { content: string; isUser: boolean 
 
 function RoleBadge({ role }: { role: string }) {
   const config: Record<string, { label: string; className: string }> = {
-    admin:         { label: "Admin",        className: "bg-red-500/15 text-red-400 border-red-500/30" },
+    admin: { label: "Admin", className: "bg-red-500/15 text-red-400 border-red-500/30" },
     auditor_write: { label: "Auditor (RW)", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
-    auditor_read:  { label: "Auditor (RO)", className: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
-    viewer:        { label: "Viewer",        className: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" },
+    auditor_read: { label: "Auditor (RO)", className: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
+    viewer: { label: "Viewer", className: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" },
   };
   const c = config[role] ?? config.viewer;
   return (

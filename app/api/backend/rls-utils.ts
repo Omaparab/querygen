@@ -27,16 +27,19 @@ export function injectRowFilters(
   const appliedPolicies: string[] = [];
 
   // Extract table references: FROM/JOIN <table> [AS <alias>]
+  // Handles plain names, double-quoted names, and backtick-quoted names.
+  // Uses negative lookahead to prevent SQL keywords (JOIN, ON, WHERE, etc) from being parsed as aliases.
   const tableRefRe =
-    /(?:FROM|JOIN)\s+"?([a-z_][a-z0-9_]*)"?(?:\s+(?:AS\s+)?"?([a-z_][a-z0-9_]*)"?)?/gi;
+    /(?:FROM|JOIN)\s+(?:`([^`]+)`|"([^"]+)"|([a-z_][a-z0-9_]*))(?:\s+(?:AS\s+)?(?:`([^`]+)`|"([^"]+)"|(?!WHERE\b|JOIN\b|ON\b|GROUP\b|ORDER\b|HAVING\b|LIMIT\b|INNER\b|OUTER\b|LEFT\b|RIGHT\b|CROSS\b|NATURAL\b|USING\b|AS\b)([a-z_][a-z0-9_]*)))?/gi;
 
   let match: RegExpExecArray | null;
   const tableRefs: { table: string; alias: string }[] = [];
 
   while ((match = tableRefRe.exec(sql)) !== null) {
-    const table = match[1].toLowerCase();
-    const alias = match[2]?.toLowerCase() ?? table;
-    tableRefs.push({ table, alias });
+    const table = (match[1] ?? match[2] ?? match[3] ?? "").toLowerCase();
+    const aliasRaw = match[4] ?? match[5] ?? match[6];
+    const alias = aliasRaw?.toLowerCase() ?? table;
+    if (table) tableRefs.push({ table, alias });
   }
 
   // Build filter clauses for matched tables
@@ -44,8 +47,9 @@ export function injectRowFilters(
   for (const { table, alias } of tableRefs) {
     const policy = policies.get(table);
     if (policy) {
+      // Use MySQL backtick quoting for identifiers
       filters.push(
-        `"${alias}"."${policy.col}" = '${policy.val.replace(/'/g, "''")}'`
+        `\`${alias}\`.\`${policy.col}\` = '${policy.val.replace(/'/g, "''")}'`
       );
       appliedPolicies.push(`${table}.${policy.col}=${policy.val}`);
     }

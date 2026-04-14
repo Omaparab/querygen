@@ -1,9 +1,10 @@
 "use server";
 
-import { Pool } from "pg";
+import mysql from "mysql2/promise";
 import pool from "./db";
 import { auth } from "@/auth";
 import { getConnectionUrl } from "./database";
+import { parseConnectionUrl } from "./db-utils";
 import { getPoliciesForRole } from "./rls";
 import { injectRowFilters } from "./rls-utils";
 
@@ -27,12 +28,12 @@ export async function getUserRole(): Promise<{ role: UserRole; userId: number } 
   try {
     const session = await auth();
     if (!session?.user?.email) return null;
-    const res = await pool.query(
-      "SELECT id, role FROM users WHERE email = $1",
+    const [rows] = await pool.query(
+      "SELECT id, role FROM users WHERE email = ?",
       [session.user.email]
-    );
-    if (!res.rows[0]) return null;
-    return { role: res.rows[0].role as UserRole, userId: res.rows[0].id };
+    ) as [any[], any];
+    if (!rows[0]) return null;
+    return { role: rows[0].role as UserRole, userId: rows[0].id };
   } catch {
     return null;
   }
@@ -71,7 +72,7 @@ export interface ExecuteResult {
  * Enforces role-based permissions, logs every attempt.
  */
 export async function executeQuery(sql: string): Promise<ExecuteResult> {
-  let userPool: Pool | null = null;
+  let userPool: mysql.Pool | null = null;
   let userId: number | null = null;
   const queryType = isWriteQuery(sql) ? "WRITE" : "SELECT";
 
@@ -89,7 +90,6 @@ export async function executeQuery(sql: string): Promise<ExecuteResult> {
     userId = userInfo.userId;
     const perms = ROLE_PERMISSIONS[userInfo.role];
 
-    // Permission check: can the user execute at all?
     if (!perms.canExecute) {
       await logExecution(userId, sql, queryType, "denied", "Insufficient permissions: viewer role cannot execute queries.", null);
       return {
@@ -99,7 +99,6 @@ export async function executeQuery(sql: string): Promise<ExecuteResult> {
       };
     }
 
-    // Permission check: write operations for read-only roles
     if (queryType === "WRITE" && !perms.canWrite) {
       await logExecution(userId, sql, queryType, "denied", "Write access denied for auditor_read role.", null);
       return {
@@ -122,24 +121,23 @@ export async function executeQuery(sql: string): Promise<ExecuteResult> {
       }
     }
 
-    // Connect to user's configured database
     const connectionUrl = await getConnectionUrl();
-    userPool = new Pool({ connectionString: connectionUrl });
+    const config = parseConnectionUrl(connectionUrl);
+    userPool = mysql.createPool({ ...config, waitForConnections: true, connectionLimit: 5 });
 
-    const result = await userPool.query(finalSQL);
+    const [rows, fields] = await userPool.query(finalSQL) as [any[], any];
 
-    const columns = result.fields?.map((f) => f.name) ?? [];
-    const rows = result.rows ?? [];
-    const rowsAffected = result.rowCount ?? 0;
+    const columns = Array.isArray(fields) ? (fields as any[]).map((f: any) => f.name) : [];
+    const rowsAffected = Array.isArray(rows) ? undefined : (rows as any).affectedRows;
 
-    await logExecution(userId, sql, queryType, "success", null, rowsAffected);
+    await logExecution(userId, sql, queryType, "success", null, rowsAffected ?? null);
 
     return {
       success: true,
       data: {
         columns,
-        rows,
-        rowCount: rows.length,
+        rows: Array.isArray(rows) ? rows : [],
+        rowCount: Array.isArray(rows) ? rows.length : 0,
         rowsAffected,
         appliedPolicies,
       },
@@ -167,7 +165,7 @@ async function logExecution(
   try {
     await pool.query(
       `INSERT INTO execution_logs (user_id, sql_text, query_type, exec_status, error_msg, rows_affected)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [userId, sql, queryType, status, errorMsg, rowsAffected]
     );
   } catch (e) {

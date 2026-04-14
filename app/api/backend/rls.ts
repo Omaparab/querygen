@@ -29,11 +29,11 @@ export async function listRowPolicies(): Promise<{
 }> {
   try {
     await requireAdmin();
-    const res = await pool.query(
+    const [rows] = await pool.query(
       `SELECT policy_id, role, table_name, filter_col, filter_val, created_at
        FROM row_policies ORDER BY role, table_name`
-    );
-    return { success: true, policies: res.rows as RowPolicy[] };
+    ) as [any[], any];
+    return { success: true, policies: rows as RowPolicy[] };
   } catch (e: any) {
     return { success: false, error: e.message };
   }
@@ -54,15 +54,22 @@ export async function createRowPolicy(
       throw new Error("All fields are required.");
     }
 
-    const res = await pool.query(
+    // MySQL upsert: INSERT ... ON DUPLICATE KEY UPDATE
+    await pool.query(
       `INSERT INTO row_policies (role, table_name, filter_col, filter_val, created_by)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (role, table_name, filter_col)
-       DO UPDATE SET filter_val = EXCLUDED.filter_val
-       RETURNING *`,
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE filter_val = VALUES(filter_val)`,
       [role, tableName.trim(), filterCol.trim(), filterVal.trim(), info!.userId]
     );
-    return { success: true, policy: res.rows[0] as RowPolicy };
+
+    // Fetch the upserted row
+    const [rows] = await pool.query(
+      `SELECT * FROM row_policies
+       WHERE role = ? AND table_name = ? AND filter_col = ?`,
+      [role, tableName.trim(), filterCol.trim()]
+    ) as [any[], any];
+
+    return { success: true, policy: rows[0] as RowPolicy };
   } catch (e: any) {
     return { success: false, error: e.message };
   }
@@ -74,11 +81,11 @@ export async function deleteRowPolicy(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     await requireAdmin();
-    const res = await pool.query(
-      "DELETE FROM row_policies WHERE policy_id = $1 RETURNING policy_id",
+    const [result] = await pool.query(
+      "DELETE FROM row_policies WHERE policy_id = ?",
       [policyId]
-    );
-    if (res.rowCount === 0) throw new Error("Policy not found.");
+    ) as [any, any];
+    if (result.affectedRows === 0) throw new Error("Policy not found.");
     return { success: true };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -97,11 +104,11 @@ export async function getPoliciesForRole(
   if (role === "admin") return map; // admins are unrestricted
 
   try {
-    const res = await pool.query(
-      "SELECT table_name, filter_col, filter_val FROM row_policies WHERE role = $1",
+    const [rows] = await pool.query(
+      "SELECT table_name, filter_col, filter_val FROM row_policies WHERE role = ?",
       [role]
-    );
-    for (const row of res.rows) {
+    ) as [any[], any];
+    for (const row of rows) {
       map.set(row.table_name.toLowerCase(), {
         col: row.filter_col,
         val: row.filter_val,
@@ -112,5 +119,3 @@ export async function getPoliciesForRole(
   }
   return map;
 }
-
-

@@ -24,7 +24,7 @@ export default function Settings() {
         const savedUrl = await getConnectionUrl()
         setApiKey(savedUrl)
       } catch {
-        setApiKey('postgresql://postgres:root@localhost:5432/Employee_Domain')
+        setApiKey('mysql://root:aditya@localhost:3306/test')
       } finally {
         setIsLoadingUrl(false)
       }
@@ -105,7 +105,7 @@ export default function Settings() {
                       setUrlStatus(null)
                       setTestStatus(null)
                     }}
-                    placeholder="postgresql://user:password@host:port/database"
+                    placeholder="mysql://user:password@host:port/database"
                     className="mt-2 w-full border border-border bg-input px-4 py-2 disabled:opacity-50"
                   />
                 </div>

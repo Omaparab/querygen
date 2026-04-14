@@ -29,16 +29,17 @@ export async function fetchHistory(): Promise<{
       throw new Error("Unauthorized: Please sign in again.");
     }
 
-    const userRes = await pool.query("SELECT id FROM users WHERE email = $1", [
-      session.user.email,
-    ]);
-    const userId = userRes.rows[0]?.id;
+    const [userRows] = await pool.query(
+      "SELECT id FROM users WHERE email = ?",
+      [session.user.email]
+    ) as [any[], any];
+    const userId = userRows[0]?.id;
 
     if (!userId) {
       throw new Error("User not found in database.");
     }
 
-    const result = await pool.query(
+    const [rows] = await pool.query(
       `SELECT qs.session_id,
               qs.started_at,
               nlh.history_id,
@@ -47,15 +48,15 @@ export async function fetchHistory(): Promise<{
        FROM   query_sessions qs
        JOIN   nl_query_history nlh
          ON   nlh.session_id = qs.session_id AND nlh.user_id = qs.user_id
-       WHERE  qs.user_id = $1
+       WHERE  qs.user_id = ?
        ORDER  BY qs.started_at DESC, nlh.created_at ASC`,
       [userId]
-    );
+    ) as [any[], any];
 
     // Group rows by session_id
     const sessionMap = new Map<string, SessionGroup>();
 
-    for (const row of result.rows) {
+    for (const row of rows) {
       const sid = row.session_id;
 
       if (!sessionMap.has(sid)) {
@@ -94,22 +95,22 @@ export async function deleteQuery(historyId: number): Promise<{
       throw new Error("Unauthorized: Please sign in again.");
     }
 
-    const userRes = await pool.query("SELECT id FROM users WHERE email = $1", [
-      session.user.email,
-    ]);
-    const userId = userRes.rows[0]?.id;
+    const [userRows] = await pool.query(
+      "SELECT id FROM users WHERE email = ?",
+      [session.user.email]
+    ) as [any[], any];
+    const userId = userRows[0]?.id;
 
     if (!userId) {
       throw new Error("User not found in database.");
     }
 
-    const result = await pool.query(
-      `DELETE FROM nl_query_history
-       WHERE history_id = $1 AND user_id = $2`,
+    const [result] = await pool.query(
+      "DELETE FROM nl_query_history WHERE history_id = ? AND user_id = ?",
       [historyId, userId]
-    );
+    ) as [any, any];
 
-    if (result.rowCount === 0) {
+    if (result.affectedRows === 0) {
       throw new Error("Query not found or you do not have permission to delete it.");
     }
 

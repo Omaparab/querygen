@@ -1,15 +1,15 @@
 "use server";
 
-import { Pool } from "pg";
+import mysql from "mysql2/promise";
 import pool from "./db";
 import { auth } from "@/auth";
+import { parseConnectionUrl } from "./db-utils";
 
-const DEFAULT_DATABASE_URL =
-  "postgresql://postgres:aditya@localhost:5432/main";
+const DEFAULT_DATABASE_URL = "mysql://root:aditya@localhost:3306/test";
 
 /**
  * Get the user's saved database connection URL from url_history,
- * falling back to the default Employee_Domain URL.
+ * falling back to the default MySQL URL.
  */
 export async function getConnectionUrl(): Promise<string> {
   try {
@@ -18,21 +18,23 @@ export async function getConnectionUrl(): Promise<string> {
       return DEFAULT_DATABASE_URL;
     }
 
-    const userRes = await pool.query("SELECT id FROM users WHERE email = $1", [
-      session.user.email,
-    ]);
-    const userId = userRes.rows[0]?.id;
+    const [userRows] = await pool.query(
+      "SELECT id FROM users WHERE email = ?",
+      [session.user.email]
+    ) as [any[], any];
+
+    const userId = userRows[0]?.id;
 
     if (!userId) {
       return DEFAULT_DATABASE_URL;
     }
 
-    const urlRes = await pool.query(
-      "SELECT database_url FROM url_history WHERE user_id = $1 ORDER BY id DESC LIMIT 1",
-      [userId],
-    );
+    const [urlRows] = await pool.query(
+      "SELECT database_url FROM url_history WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+      [userId]
+    ) as [any[], any];
 
-    return urlRes.rows[0]?.database_url || DEFAULT_DATABASE_URL;
+    return urlRows[0]?.database_url || DEFAULT_DATABASE_URL;
   } catch (error) {
     console.error("Error fetching connection URL:", error);
     return DEFAULT_DATABASE_URL;
@@ -48,7 +50,7 @@ export interface TableInfo {
 
 /**
  * Connect to the user's configured database and fetch all tables
- * from the public schema along with their data (limited to 100 rows each).
+ * along with their data (limited to 100 rows each).
  */
 export async function fetchTables(): Promise<{
   success: boolean;
@@ -56,48 +58,51 @@ export async function fetchTables(): Promise<{
   error?: string;
   databaseUrl?: string;
 }> {
-  let userPool: Pool | null = null;
+  let userPool: mysql.Pool | null = null;
 
   try {
     const connectionUrl = await getConnectionUrl();
+    const config = parseConnectionUrl(connectionUrl);
 
-    // Create a temporary pool for the user's database
-    userPool = new Pool({ connectionString: connectionUrl });
+    userPool = mysql.createPool({
+      ...config,
+      waitForConnections: true,
+      connectionLimit: 5,
+    });
 
     // Test the connection
     await userPool.query("SELECT 1");
 
-    // Get all table names from the public schema
-    const tablesRes = await userPool.query(`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-        AND table_type = 'BASE TABLE'
-      ORDER BY table_name
-    `);
+    // Get all table names in the target database
+    const [tablesRows] = await userPool.query(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = ? AND table_type = 'BASE TABLE'
+       ORDER BY table_name`,
+      [config.database]
+    ) as [any[], any];
 
     const tables: TableInfo[] = [];
 
-    for (const row of tablesRes.rows) {
-      const tableName = row.table_name;
+    for (const row of tablesRows) {
+      const tableName = row.table_name ?? row.TABLE_NAME;
 
       // Fetch row count
-      const countRes = await userPool.query(
-        `SELECT COUNT(*) as count FROM "${tableName}"`,
-      );
-      const rowCount = parseInt(countRes.rows[0].count, 10);
+      const [countRows] = await userPool.query(
+        `SELECT COUNT(*) AS count FROM \`${tableName}\``
+      ) as [any[], any];
+      const rowCount = parseInt(countRows[0].count, 10);
 
       // Fetch first 100 rows
-      const dataRes = await userPool.query(
-        `SELECT * FROM "${tableName}" LIMIT 100`,
-      );
+      const [dataRows, fields] = await userPool.query(
+        `SELECT * FROM \`${tableName}\` LIMIT 100`
+      ) as [any[], any];
 
-      const columns = dataRes.fields.map((f: { name: string }) => f.name) || [];
+      const columns = (fields as any[]).map((f: any) => f.name);
 
       tables.push({
         tableName,
         columns,
-        rows: dataRes.rows,
+        rows: dataRows,
         rowCount,
       });
     }
@@ -120,11 +125,16 @@ export async function fetchTables(): Promise<{
  * Test a database connection URL without fetching any data.
  */
 export async function testConnection(
-  url: string,
+  url: string
 ): Promise<{ success: boolean; error?: string }> {
-  let testPool: Pool | null = null;
+  let testPool: mysql.Pool | null = null;
   try {
-    testPool = new Pool({ connectionString: url });
+    const config = parseConnectionUrl(url);
+    testPool = mysql.createPool({
+      ...config,
+      waitForConnections: true,
+      connectionLimit: 2,
+    });
     await testPool.query("SELECT 1");
     return { success: true };
   } catch (error: any) {
@@ -137,56 +147,143 @@ export async function testConnection(
 }
 
 /**
- * Fetch the schema details from the user's connected database
- * and format it as a string for the AI model.
- * Format: table_name(column1, column2), other_table(col1, col2)
+ * Map MySQL column data types to the simplified Spider schema types.
+ * Spider uses: int, text, bool, real, time, others default to text.
+ */
+function toSpiderType(mysqlType: string): string {
+  const t = mysqlType.toLowerCase();
+  if (/^(int|bigint|smallint|tinyint|mediumint)/.test(t)) return "int";
+  if (/^(float|double|decimal|numeric|real)/.test(t)) return "real";
+  if (/^(bool|boolean|bit)/.test(t)) return "bool";
+  if (/^(date|datetime|timestamp|time|year)/.test(t)) return "time";
+  return "text";
+}
+
+/**
+ * Fetch the schema from the user's connected database and serialise it
+ * in the Spider / T5-LM-Large-text2sql format expected by the model:
+ *
+ *   "table" "col1" type , "col2" type , ...
+ *   foreign_key: "fk_col" type from "ref_table" "ref_col" ,
+ *   primary key: "pk_col" [SEP] ...
  */
 export async function getDynamicSchema(): Promise<{
   success: boolean;
   schema?: string;
   error?: string;
 }> {
-  let userPool: Pool | null = null;
+  let userPool: mysql.Pool | null = null;
 
   try {
     const connectionUrl = await getConnectionUrl();
-    userPool = new Pool({ connectionString: connectionUrl });
+    const config = parseConnectionUrl(connectionUrl);
 
-    // Get all tables and their columns in the public schema
-    const schemaRes = await userPool.query(`
-            SELECT table_name, column_name
-            FROM information_schema.columns
-            WHERE table_schema = 'public'
-            ORDER BY table_name, ordinal_position;
-        `);
+    userPool = mysql.createPool({
+      ...config,
+      waitForConnections: true,
+      connectionLimit: 5,
+    });
 
-    if (schemaRes.rows.length === 0) {
+    const db = config.database;
+
+    // ── 1. Columns with types ──────────────────────────────────────────────
+    const [colRows] = await userPool.query(
+      `SELECT table_name, column_name, data_type
+       FROM information_schema.columns
+       WHERE table_schema = ?
+       ORDER BY table_name, ordinal_position`,
+      [db]
+    ) as [any[], any];
+
+    if ((colRows as any[]).length === 0) {
       return { success: true, schema: "" };
     }
 
-    // Group columns by table
-    const tableSchema: Record<string, string[]> = {};
+    // ── 2. Primary keys ────────────────────────────────────────────────────
+    const [pkRows] = await userPool.query(
+      `SELECT table_name, column_name
+       FROM information_schema.key_column_usage
+       WHERE table_schema = ?
+         AND constraint_name = 'PRIMARY'
+       ORDER BY table_name, ordinal_position`,
+      [db]
+    ) as [any[], any];
 
-    for (const row of schemaRes.rows) {
-      const table = row.table_name;
-      const column = row.column_name;
-
-      if (!tableSchema[table]) {
-        tableSchema[table] = [];
-      }
-      tableSchema[table].push(column);
+    // Map: tableName → pkColumn[]
+    const pkMap: Record<string, string[]> = {};
+    for (const r of pkRows as any[]) {
+      const t = r.table_name ?? r.TABLE_NAME;
+      const c = r.column_name ?? r.COLUMN_NAME;
+      if (!pkMap[t]) pkMap[t] = [];
+      pkMap[t].push(c);
     }
 
-    // Format to: table_name: col1, col2 | table2: col1
-    const formattedSchemaParts = Object.entries(tableSchema).map(
-      ([tableName, columns]) => {
-        return `${tableName}: ${columns.join(", ")}`;
-      },
-    );
+    // ── 3. Foreign keys ────────────────────────────────────────────────────
+    const [fkRows] = await userPool.query(
+      `SELECT kcu.table_name, kcu.column_name,
+              kcu.referenced_table_name, kcu.referenced_column_name,
+              cols.data_type
+       FROM information_schema.key_column_usage kcu
+       JOIN information_schema.columns cols
+         ON cols.table_schema = kcu.table_schema
+        AND cols.table_name   = kcu.table_name
+        AND cols.column_name  = kcu.column_name
+       WHERE kcu.table_schema = ?
+         AND kcu.referenced_table_name IS NOT NULL
+       ORDER BY kcu.table_name, kcu.ordinal_position`,
+      [db]
+    ) as [any[], any];
 
-    const finalSchemaString = formattedSchemaParts.join(" | ");
+    // Map: tableName → FK descriptor[]
+    type FKDesc = { col: string; dataType: string; refTable: string; refCol: string };
+    const fkMap: Record<string, FKDesc[]> = {};
+    for (const r of fkRows as any[]) {
+      const t = r.table_name ?? r.TABLE_NAME;
+      if (!fkMap[t]) fkMap[t] = [];
+      fkMap[t].push({
+        col: r.column_name ?? r.COLUMN_NAME,
+        dataType: r.data_type ?? r.DATA_TYPE,
+        refTable: r.referenced_table_name ?? r.REFERENCED_TABLE_NAME,
+        refCol: r.referenced_column_name ?? r.REFERENCED_COLUMN_NAME,
+      });
+    }
 
-    return { success: true, schema: finalSchemaString };
+    // ── 4. Build per-table column map ──────────────────────────────────────
+    type ColDesc = { name: string; dataType: string };
+    const tableMap: Record<string, ColDesc[]> = {};
+    for (const r of colRows as any[]) {
+      const t = r.table_name ?? r.TABLE_NAME;
+      const c = r.column_name ?? r.COLUMN_NAME;
+      const dt = r.data_type ?? r.DATA_TYPE;
+      if (!tableMap[t]) tableMap[t] = [];
+      tableMap[t].push({ name: c, dataType: dt });
+    }
+
+    // ── 5. Serialise each table ────────────────────────────────────────────
+    const tableParts: string[] = Object.entries(tableMap).map(([table, cols]) => {
+      // Column list
+      const colPart = cols
+        .map(c => `"${c.name}" ${toSpiderType(c.dataType)}`)
+        .join(" , ");
+
+      // Foreign-key clause
+      const fks = fkMap[table] ?? [];
+      const fkPart = fks.length === 0
+        ? ""
+        : fks
+            .map(fk => `"${fk.col}" ${toSpiderType(fk.dataType)} from "${fk.refTable}" "${fk.refCol}"`)
+            .join(" , ");
+
+      // Primary-key clause
+      const pks = pkMap[table] ?? [];
+      const pkPart = pks.map(p => `"${p}"`).join(" ");
+
+      return `"${table}" ${colPart} , foreign_key: ${fkPart} primary key: ${pkPart}`;
+    });
+
+    const schema = tableParts.join(" [SEP] ");
+
+    return { success: true, schema };
   } catch (error: any) {
     console.error("❌ getDynamicSchema Error:", error.message);
     return {

@@ -1,17 +1,19 @@
-import { Pool } from 'pg';
+import mysql from 'mysql2/promise';
 
-const pool = new Pool({
-  user: 'postgres',
+const pool = mysql.createPool({
   host: 'localhost',
+  user: 'root',
+  password: 'aditya',
   database: 'main',
-  password: 'root',
-  port: 5432,
+  port: 3306,
+  waitForConnections: true,
+  connectionLimit: 10,
 });
 
 (async () => {
   try {
-    console.log('DB Connection established');
     await pool.query('SELECT 1');
+    console.log('DB Connection established');
   } catch (err) {
     console.error("DB connection failed:", err);
   }

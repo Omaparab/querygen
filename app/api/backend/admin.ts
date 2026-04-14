@@ -40,10 +40,10 @@ export async function listUsers(): Promise<{
 }> {
   try {
     await requireAdmin();
-    const res = await pool.query(
+    const [rows] = await pool.query(
       "SELECT id, email, role FROM users ORDER BY id ASC"
-    );
-    return { success: true, users: res.rows as UserRecord[] };
+    ) as [any[], any];
+    return { success: true, users: rows as UserRecord[] };
   } catch (error: any) {
     return { success: false, error: error.message };
   }
@@ -62,12 +62,12 @@ export async function updateUserRole(
       throw new Error("Invalid role specified.");
     }
 
-    const res = await pool.query(
-      "UPDATE users SET role = $1 WHERE id = $2 RETURNING id",
+    const [result] = await pool.query(
+      "UPDATE users SET role = ? WHERE id = ?",
       [newRole, userId]
-    );
+    ) as [any, any];
 
-    if (res.rowCount === 0) throw new Error("User not found.");
+    if (result.affectedRows === 0) throw new Error("User not found.");
 
     return { success: true };
   } catch (error: any) {
@@ -83,16 +83,16 @@ export async function listExecutionLogs(limit = 50): Promise<{
 }> {
   try {
     await requireAdmin();
-    const res = await pool.query(
+    const [rows] = await pool.query(
       `SELECT el.log_id, u.email, el.sql_text, el.query_type,
               el.exec_status, el.error_msg, el.rows_affected, el.executed_at
        FROM execution_logs el
        JOIN users u ON u.id = el.user_id
        ORDER BY el.executed_at DESC
-       LIMIT $1`,
+       LIMIT ?`,
       [limit]
-    );
-    return { success: true, logs: res.rows as ExecutionLogRecord[] };
+    ) as [any[], any];
+    return { success: true, logs: rows as ExecutionLogRecord[] };
   } catch (error: any) {
     return { success: false, error: error.message };
   }

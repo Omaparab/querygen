@@ -10,10 +10,11 @@ export async function saveNLQuery(queryText: string, sessionId?: string) {
       throw new Error("Unauthorized: Please sign in again.");
     }
 
-    const userRes = await pool.query("SELECT id FROM users WHERE email = $1", [
-      session.user.email,
-    ]);
-    const userId = userRes.rows[0]?.id;
+    const [userRows] = await pool.query(
+      "SELECT id FROM users WHERE email = ?",
+      [session.user.email]
+    ) as [any[], any];
+    const userId = userRows[0]?.id;
 
     if (!userId) {
       throw new Error("User not found in database.");
@@ -22,23 +23,20 @@ export async function saveNLQuery(queryText: string, sessionId?: string) {
     // Ensure a row exists in query_sessions for this session
     if (sessionId) {
       await pool.query(
-        `INSERT INTO query_sessions (session_id, user_id, started_at)
-         VALUES ($1, $2, CURRENT_TIMESTAMP)
-         ON CONFLICT (session_id) DO NOTHING`,
+        `INSERT IGNORE INTO query_sessions (session_id, user_id, started_at)
+         VALUES (?, ?, CURRENT_TIMESTAMP)`,
         [sessionId, userId]
       );
     }
 
-    const query = `
-      INSERT INTO nl_query_history (user_id, query_text, session_id)
-      VALUES ($1, $2, $3)
-      RETURNING *;
-    `;
-
-    const result = await pool.query(query, [userId, queryText, sessionId ?? null]);
+    const [result] = await pool.query(
+      `INSERT INTO nl_query_history (user_id, query_text, session_id)
+       VALUES (?, ?, ?)`,
+      [userId, queryText, sessionId ?? null]
+    ) as [any, any];
 
     console.log(`✅ NL query saved for user ${session.user.email}`);
-    return { success: true, data: result.rows[0] };
+    return { success: true, data: { insertId: result.insertId } };
   } catch (error: any) {
     console.error("❌ saveNLQuery Error:", error.message);
     return { success: false, error: error.message };

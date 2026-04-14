@@ -22,11 +22,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         try {
           const email = token.email;
           if (email) {
-            const res = await pool.query(
-              "SELECT role FROM users WHERE email = $1",
+            const [rows] = await pool.query(
+              "SELECT role FROM users WHERE email = ?",
               [email]
-            );
-            token.role = res.rows[0]?.role ?? "viewer";
+            ) as [any[], any];
+            token.role = rows[0]?.role ?? "viewer";
           }
         } catch {
           token.role = "viewer";
@@ -43,16 +43,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     async signIn({ user, account }) {
       if (account?.provider === "google") {
-        const existingUser = await pool.query(
-          "SELECT * FROM users WHERE email = $1",
-          [user.email]
-        );
-        if (existingUser.rowCount === 0) {
-          // Insert new users with default role 'viewer'
-          await pool.query(
-            "INSERT INTO users (email, role) VALUES ($1, 'viewer')",
+        try {
+          const [rows] = await pool.query(
+            "SELECT id FROM users WHERE email = ?",
             [user.email]
-          );
+          ) as [any[], any];
+
+          if (rows.length === 0) {
+            // Insert new user with default role 'viewer'
+            await pool.query(
+              "INSERT INTO users (email, role) VALUES (?, 'viewer')",
+              [user.email]
+            );
+          }
+        } catch (e) {
+          console.error("signIn callback error:", e);
+          return false;
         }
       }
       return true;

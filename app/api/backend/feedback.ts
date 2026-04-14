@@ -33,18 +33,17 @@ export async function submitFeedback(
     const session = await auth();
     if (!session?.user?.email) throw new Error("Unauthorized");
 
-    const userRes = await pool.query(
-      "SELECT id FROM users WHERE email = $1",
+    const [userRows] = await pool.query(
+      "SELECT id FROM users WHERE email = ?",
       [session.user.email]
-    );
-    const userId = userRes.rows[0]?.id;
+    ) as [any[], any];
+    const userId = userRows[0]?.id;
     if (!userId) throw new Error("User not found.");
 
-    // Upsert: one feedback per user per history_id
+    // INSERT IGNORE: one feedback per user per history_id (requires unique key on (history_id, user_id))
     await pool.query(
-      `INSERT INTO feedback (history_id, user_id, rating, comments)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT DO NOTHING`,
+      `INSERT IGNORE INTO feedback (history_id, user_id, rating, comments)
+       VALUES (?, ?, ?, ?)`,
       [historyId, userId, rating, comment ?? null]
     );
 
@@ -67,23 +66,23 @@ export async function getFeedbackStats(): Promise<{
       throw new Error("Forbidden: Admin access required.");
     }
 
-    // Aggregate counts
-    const countRes = await pool.query(`
+    // Aggregate counts (MySQL doesn't support FILTER, use SUM+IF instead)
+    const [countRows] = await pool.query(`
       SELECT
-        COUNT(*)                                        AS total,
-        COUNT(*) FILTER (WHERE rating = 1)              AS positive,
-        COUNT(*) FILTER (WHERE rating = -1)             AS negative
+        COUNT(*)                                    AS total,
+        COALESCE(SUM(IF(rating = 1,  1, 0)), 0)    AS positive,
+        COALESCE(SUM(IF(rating = -1, 1, 0)), 0)    AS negative
       FROM feedback
-    `);
+    `) as [any[], any];
 
-    const { total, positive, negative } = countRes.rows[0];
-    const totalN = parseInt(total, 10);
-    const positiveN = parseInt(positive, 10);
-    const negativeN = parseInt(negative, 10);
+    const { total, positive, negative } = countRows[0];
+    const totalN    = parseInt(total    ?? 0, 10);
+    const positiveN = parseInt(positive ?? 0, 10);
+    const negativeN = parseInt(negative ?? 0, 10);
     const accuracy_pct = totalN > 0 ? Math.round((positiveN / totalN) * 100) : 0;
 
     // Recent feedback with query text
-    const recentRes = await pool.query(`
+    const [recentRows] = await pool.query(`
       SELECT f.feedback_id, f.history_id, u.email AS user_email,
              nlh.query_text, f.rating, f.comments, f.submitted_at
       FROM   feedback f
@@ -91,17 +90,17 @@ export async function getFeedbackStats(): Promise<{
       JOIN   nl_query_history nlh ON nlh.history_id = f.history_id
       ORDER  BY f.submitted_at DESC
       LIMIT  50
-    `);
+    `) as [any[], any];
 
     // Top failure comments (thumbs-down with non-null comment)
-    const commentsRes = await pool.query(`
+    const [commentsRows] = await pool.query(`
       SELECT comments AS comment, COUNT(*) AS count
       FROM   feedback
       WHERE  rating = -1 AND comments IS NOT NULL AND comments != ''
       GROUP  BY comments
       ORDER  BY count DESC
       LIMIT  10
-    `);
+    `) as [any[], any];
 
     return {
       success: true,
@@ -110,8 +109,8 @@ export async function getFeedbackStats(): Promise<{
         positive: positiveN,
         negative: negativeN,
         accuracy_pct,
-        recent: recentRes.rows as FeedbackEntry[],
-        top_failure_comments: commentsRes.rows.map((r) => ({
+        recent: recentRows as FeedbackEntry[],
+        top_failure_comments: commentsRows.map((r: any) => ({
           comment: r.comment,
           count: parseInt(r.count, 10),
         })),
