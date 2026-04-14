@@ -48,7 +48,7 @@ export async function getPermissions(): Promise<RolePermissions & { role: UserRo
 /** Detects if a SQL statement is a write operation */
 function isWriteQuery(sql: string): boolean {
   const trimmed = sql.trim().toUpperCase();
-  return /^(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|MERGE|UPSERT)\b/.test(trimmed);
+  return /^(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|REPLACE|MERGE|UPSERT|GRANT)\b/.test(trimmed);
 }
 
 export interface QueryResult {
