@@ -1,17 +1,30 @@
 "use client";
 
-import { Sidebar } from '@/components/sidebar'
-import { useState, useRef, useEffect } from 'react'
+import { Sidebar } from "@/components/sidebar";
+import { useState, useRef, useEffect } from "react";
 import {
-  Send, Play, AlertTriangle, CheckCircle, XCircle,
-  Loader2, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown,
-  Lock, MessageSquare
-} from 'lucide-react'
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+  Send,
+  Play,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  ThumbsUp,
+  ThumbsDown,
+  Lock,
+  MessageSquare,
+} from "lucide-react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { saveNLQuery } from "@/app/api/backend/query";
 import { getDynamicSchema } from "@/app/api/backend/database";
-import { executeQuery, getPermissions, type QueryResult } from "@/app/api/backend/rbac";
+import {
+  executeQuery,
+  getPermissions,
+  type QueryResult,
+} from "@/app/api/backend/rbac";
 import { submitFeedback } from "@/app/api/backend/feedback";
 import { SqlBlock } from "@/components/sql-block";
 
@@ -75,9 +88,9 @@ export default function Home() {
   function extractSQL(content: string): string | undefined {
     const match = content.match(/```(?:sql)?\s*([\s\S]+?)```/i);
     if (match) return match[1].trim();
-    const lines = content.split('\n');
-    const sqlLine = lines.find(l =>
-      /^\s*(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|WITH)\b/i.test(l)
+    const lines = content.split("\n");
+    const sqlLine = lines.find((l) =>
+      /^\s*(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|WITH)\b/i.test(l),
     );
     return sqlLine?.trim();
   }
@@ -88,37 +101,43 @@ export default function Home() {
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      type: 'user',
+      type: "user",
       content: queryText,
       timestamp: new Date(),
     };
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
 
     let schema = "";
     try {
       const schemaRes = await getDynamicSchema();
-      if (!schemaRes.success || !schemaRes.schema) throw new Error(schemaRes.error || "No schema found");
+      if (!schemaRes.success || !schemaRes.schema)
+        throw new Error(schemaRes.error || "No schema found");
       schema = schemaRes.schema;
     } catch (err: any) {
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        type: "assistant",
-        content: `Sorry, I couldn't connect to your database to read the schema. Please check your Database URL in Settings. Error: ${err.message}`,
-        timestamp: new Date(),
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          type: "assistant",
+          content: `Sorry, I couldn't connect to your database to read the schema. Please check your Database URL in Settings. Error: ${err.message}`,
+          timestamp: new Date(),
+        },
+      ]);
       setIsLoading(false);
       return;
     }
 
     try {
-      const response = await fetch("http://localhost:8000/", {
+      const response = await fetch("https://querygen-api.234892.xyz/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: queryText, schema }),
       });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+      if (!response.ok)
+        throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
 
       // Save NL query and capture history_id for feedback
@@ -129,7 +148,9 @@ export default function Home() {
       }
 
       // API returns { output: ["SELECT ..."] } — grab the first element
-      const sqlString: string = Array.isArray(data.output) ? data.output[0] : data.output;
+      const sqlString: string = Array.isArray(data.output)
+        ? data.output[0]
+        : data.output;
       const rawSQL = extractSQL(sqlString) ?? sqlString;
 
       const assistantMessage: Message = {
@@ -147,101 +168,144 @@ export default function Home() {
           submitting: false,
         },
       };
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("Error fetching query:", error);
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        type: "assistant",
-        content: "Sorry, I encountered an error while generating the query.",
-        timestamp: new Date(),
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          type: "assistant",
+          content: "Sorry, I encountered an error while generating the query.",
+          timestamp: new Date(),
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleExecute = async (messageId: string, sql: string) => {
-    setMessages(prev =>
-      prev.map(m => m.id === messageId
-        ? { ...m, queryResult: { status: "loading", expanded: true } }
-        : m
-      )
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? { ...m, queryResult: { status: "loading", expanded: true } }
+          : m,
+      ),
     );
     const result = await executeQuery(sql);
-    setMessages(prev =>
-      prev.map(m => {
+    setMessages((prev) =>
+      prev.map((m) => {
         if (m.id !== messageId) return m;
-        if (result.denied) return { ...m, queryResult: { status: "denied", error: result.error, expanded: true } };
-        if (!result.success) return { ...m, queryResult: { status: "error", error: result.error, expanded: true } };
-        return { ...m, queryResult: { status: "success", data: result.data, expanded: true } };
-      })
+        if (result.denied)
+          return {
+            ...m,
+            queryResult: {
+              status: "denied",
+              error: result.error,
+              expanded: true,
+            },
+          };
+        if (!result.success)
+          return {
+            ...m,
+            queryResult: {
+              status: "error",
+              error: result.error,
+              expanded: true,
+            },
+          };
+        return {
+          ...m,
+          queryResult: { status: "success", data: result.data, expanded: true },
+        };
+      }),
     );
   };
 
   const toggleExpanded = (messageId: string) => {
-    setMessages(prev =>
-      prev.map(m =>
+    setMessages((prev) =>
+      prev.map((m) =>
         m.id === messageId && m.queryResult
-          ? { ...m, queryResult: { ...m.queryResult, expanded: !m.queryResult.expanded } }
-          : m
-      )
+          ? {
+              ...m,
+              queryResult: {
+                ...m.queryResult,
+                expanded: !m.queryResult.expanded,
+              },
+            }
+          : m,
+      ),
     );
   };
 
-  const handleFeedback = (messageId: string, rating: "thumbs_up" | "thumbs_down") => {
-    setMessages(prev =>
-      prev.map(m => {
+  const handleFeedback = (
+    messageId: string,
+    rating: "thumbs_up" | "thumbs_down",
+  ) => {
+    setMessages((prev) =>
+      prev.map((m) => {
         if (m.id !== messageId || !m.feedback) return m;
         // Thumbs down reveals comment box
         const showComment = rating === "thumbs_down";
-        return { ...m, feedback: { ...m.feedback, status: rating, showComment } };
-      })
+        return {
+          ...m,
+          feedback: { ...m.feedback, status: rating, showComment },
+        };
+      }),
     );
     // Auto-submit thumbs up immediately
-    if (rating === "thumbs_up") submitFeedbackForMessage(messageId, 1, undefined);
+    if (rating === "thumbs_up")
+      submitFeedbackForMessage(messageId, 1, undefined);
   };
 
   const submitFeedbackForMessage = async (
     messageId: string,
     rating: 1 | -1,
-    comment: string | undefined
+    comment: string | undefined,
   ) => {
-    const msg = messages.find(m => m.id === messageId);
+    const msg = messages.find((m) => m.id === messageId);
     if (!msg?.historyId) return;
 
-    setMessages(prev =>
-      prev.map(m =>
+    setMessages((prev) =>
+      prev.map((m) =>
         m.id === messageId && m.feedback
           ? { ...m, feedback: { ...m.feedback, submitting: true } }
-          : m
-      )
+          : m,
+      ),
     );
 
     await submitFeedback(msg.historyId, rating, comment);
 
-    setMessages(prev =>
-      prev.map(m =>
+    setMessages((prev) =>
+      prev.map((m) =>
         m.id === messageId && m.feedback
-          ? { ...m, feedback: { ...m.feedback, status: "submitted", submitting: false } }
-          : m
-      )
+          ? {
+              ...m,
+              feedback: {
+                ...m.feedback,
+                status: "submitted",
+                submitting: false,
+              },
+            }
+          : m,
+      ),
     );
   };
 
   const handleFeedbackCommentSubmit = (messageId: string) => {
-    const msg = messages.find(m => m.id === messageId);
+    const msg = messages.find((m) => m.id === messageId);
     if (!msg?.feedback) return;
     submitFeedbackForMessage(messageId, -1, msg.feedback.comment || undefined);
   };
 
   const updateFeedbackComment = (messageId: string, comment: string) => {
-    setMessages(prev =>
-      prev.map(m =>
+    setMessages((prev) =>
+      prev.map((m) =>
         m.id === messageId && m.feedback
           ? { ...m, feedback: { ...m.feedback, comment } }
-          : m
-      )
+          : m,
+      ),
     );
   };
 
@@ -263,7 +327,9 @@ export default function Home() {
         <div className="border-b border-border bg-background px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">Query Generator</h1>
+              <h1 className="text-3xl font-bold tracking-tight">
+                Query Generator
+              </h1>
               <p className="mt-2 text-muted-foreground">
                 AI-powered SQL for audit & compliance — describe what you need
               </p>
@@ -284,33 +350,42 @@ export default function Home() {
         {/* Chat */}
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto space-y-6 px-8 py-6">
-            {messages.map(message => (
+            {messages.map((message) => (
               <div
                 key={message.id}
                 className={`flex gap-4 ${message.type === "user" ? "justify-end" : "justify-start"}`}
               >
-                <div className={`max-w-3xl w-full ${message.type === "user" ? "flex justify-end" : ""}`}>
+                <div
+                  className={`max-w-3xl w-full ${message.type === "user" ? "flex justify-end" : ""}`}
+                >
                   {/* Bubble */}
                   <div
-                    className={`px-4 py-3 ${message.type === "user"
-                      ? "bg-primary text-primary-foreground max-w-2xl"
-                      : "border border-border bg-secondary text-foreground w-full"
-                      }`}
+                    className={`px-4 py-3 ${
+                      message.type === "user"
+                        ? "bg-primary text-primary-foreground max-w-2xl"
+                        : "border border-border bg-secondary text-foreground w-full"
+                    }`}
                   >
-                    <MessageContent content={message.content} isUser={message.type === "user"} />
+                    <MessageContent
+                      content={message.content}
+                      isUser={message.type === "user"}
+                    />
 
                     {/* Execute button */}
                     {message.type === "assistant" && message.sql && (
                       <div className="mt-3 pt-3 border-t border-border/50">
                         <button
-                          onClick={() => handleExecute(message.id, message.sql!)}
+                          onClick={() =>
+                            handleExecute(message.id, message.sql!)
+                          }
                           disabled={message.queryResult?.status === "loading"}
                           className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {message.queryResult?.status === "loading"
-                            ? <Loader2 size={13} className="animate-spin" />
-                            : <Play size={13} />
-                          }
+                          {message.queryResult?.status === "loading" ? (
+                            <Loader2 size={13} className="animate-spin" />
+                          ) : (
+                            <Play size={13} />
+                          )}
                           Execute Query
                         </button>
                       </div>
@@ -318,20 +393,25 @@ export default function Home() {
                   </div>
 
                   {/* Query result panel */}
-                  {message.queryResult && message.queryResult.status !== "idle" && (
-                    <QueryResultPanel
-                      result={message.queryResult}
-                      onToggle={() => toggleExpanded(message.id)}
-                    />
-                  )}
+                  {message.queryResult &&
+                    message.queryResult.status !== "idle" && (
+                      <QueryResultPanel
+                        result={message.queryResult}
+                        onToggle={() => toggleExpanded(message.id)}
+                      />
+                    )}
 
                   {/* Feedback panel */}
                   {message.type === "assistant" && message.feedback && (
                     <FeedbackPanel
                       feedback={message.feedback}
-                      onRate={rating => handleFeedback(message.id, rating)}
-                      onCommentChange={comment => updateFeedbackComment(message.id, comment)}
-                      onCommentSubmit={() => handleFeedbackCommentSubmit(message.id)}
+                      onRate={(rating) => handleFeedback(message.id, rating)}
+                      onCommentChange={(comment) =>
+                        updateFeedbackComment(message.id, comment)
+                      }
+                      onCommentSubmit={() =>
+                        handleFeedbackCommentSubmit(message.id)
+                      }
                     />
                   )}
                 </div>
@@ -359,8 +439,8 @@ export default function Home() {
               <input
                 type="text"
                 value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleSend()}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSend()}
                 placeholder="Describe the data you need..."
                 className="flex-1 border border-border bg-input px-4 py-3 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               />
@@ -385,9 +465,17 @@ export default function Home() {
  * Renders a message, splitting it into prose segments and highlighted SQL blocks.
  * Handles ```sql ... ``` and ``` ... ``` fenced code blocks.
  */
-function MessageContent({ content, isUser }: { content: string; isUser: boolean }) {
+function MessageContent({
+  content,
+  isUser,
+}: {
+  content: string;
+  isUser: boolean;
+}) {
   if (isUser) {
-    return <p className="whitespace-pre-wrap text-sm leading-relaxed">{content}</p>;
+    return (
+      <p className="whitespace-pre-wrap text-sm leading-relaxed">{content}</p>
+    );
   }
 
   // Split on ```sql ... ``` or ``` ... ``` fences
@@ -415,14 +503,28 @@ function MessageContent({ content, isUser }: { content: string; isUser: boolean 
 
 function RoleBadge({ role }: { role: string }) {
   const config: Record<string, { label: string; className: string }> = {
-    admin: { label: "Admin", className: "bg-red-500/15 text-red-400 border-red-500/30" },
-    auditor_write: { label: "Auditor (RW)", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
-    auditor_read: { label: "Auditor (RO)", className: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
-    viewer: { label: "Viewer", className: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" },
+    admin: {
+      label: "Admin",
+      className: "bg-red-500/15 text-red-400 border-red-500/30",
+    },
+    auditor_write: {
+      label: "Auditor (RW)",
+      className: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    },
+    auditor_read: {
+      label: "Auditor (RO)",
+      className: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+    },
+    viewer: {
+      label: "Viewer",
+      className: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+    },
   };
   const c = config[role] ?? config.viewer;
   return (
-    <span className={`text-xs font-semibold border px-2.5 py-1 rounded-full ${c.className}`}>
+    <span
+      className={`text-xs font-semibold border px-2.5 py-1 rounded-full ${c.className}`}
+    >
       {c.label}
     </span>
   );
@@ -466,7 +568,8 @@ function QueryResultPanel({
     );
   }
   if (result.status === "success" && result.data) {
-    const { columns, rows, rowCount, rowsAffected, appliedPolicies } = result.data;
+    const { columns, rows, rowCount, rowsAffected, appliedPolicies } =
+      result.data;
     const isSelect = columns.length > 0;
     return (
       <div className="mt-2 border border-emerald-500/40 bg-background">
@@ -488,7 +591,12 @@ function QueryResultPanel({
               </span>
             )}
           </div>
-          {isSelect && (result.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+          {isSelect &&
+            (result.expanded ? (
+              <ChevronUp size={14} />
+            ) : (
+              <ChevronDown size={14} />
+            ))}
         </button>
 
         {/* RLS indicator */}
@@ -507,8 +615,11 @@ function QueryResultPanel({
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr className="bg-secondary border-b border-border">
-                  {columns.map(col => (
-                    <th key={col} className="px-3 py-2 text-left text-muted-foreground font-semibold uppercase tracking-wide whitespace-nowrap">
+                  {columns.map((col) => (
+                    <th
+                      key={col}
+                      className="px-3 py-2 text-left text-muted-foreground font-semibold uppercase tracking-wide whitespace-nowrap"
+                    >
                       {col}
                     </th>
                   ))}
@@ -516,19 +627,32 @@ function QueryResultPanel({
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={i} className="border-b border-border/50 hover:bg-secondary/50 transition-colors">
-                    {columns.map(col => (
-                      <td key={col} className="px-3 py-2 text-foreground font-mono whitespace-nowrap max-w-xs truncate">
-                        {row[col] === null
-                          ? <span className="text-muted-foreground italic">NULL</span>
-                          : String(row[col])}
+                  <tr
+                    key={i}
+                    className="border-b border-border/50 hover:bg-secondary/50 transition-colors"
+                  >
+                    {columns.map((col) => (
+                      <td
+                        key={col}
+                        className="px-3 py-2 text-foreground font-mono whitespace-nowrap max-w-xs truncate"
+                      >
+                        {row[col] === null ? (
+                          <span className="text-muted-foreground italic">
+                            NULL
+                          </span>
+                        ) : (
+                          String(row[col])
+                        )}
                       </td>
                     ))}
                   </tr>
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={columns.length} className="px-3 py-4 text-center text-muted-foreground">
+                    <td
+                      colSpan={columns.length}
+                      className="px-3 py-4 text-center text-muted-foreground"
+                    >
                       No rows returned
                     </td>
                   </tr>
@@ -567,7 +691,9 @@ function FeedbackPanel({
     <div className="mt-1 px-1">
       {feedback.status === "idle" && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Was this query accurate?</span>
+          <span className="text-xs text-muted-foreground">
+            Was this query accurate?
+          </span>
           <button
             onClick={() => onRate("thumbs_up")}
             className="flex items-center gap-1 text-xs px-2 py-0.5 border border-border hover:border-emerald-500/50 hover:text-emerald-400 text-muted-foreground transition-colors"
@@ -602,8 +728,8 @@ function FeedbackPanel({
               type="text"
               placeholder="What was wrong? (optional)"
               value={feedback.comment}
-              onChange={e => onCommentChange(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && onCommentSubmit()}
+              onChange={(e) => onCommentChange(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && onCommentSubmit()}
               className="flex-1 text-xs border border-border bg-input px-2 py-1 text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             />
             <button

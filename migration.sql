@@ -1,6 +1,6 @@
 -- ============================================================
 -- QueryGen MySQL Migration (Full Setup)
--- Run with: mysql -u root -paditya test < mysql_migration.sql
+-- Run with: mysql -u <username> -p <database_name> < migration.sql
 -- ============================================================
 
 -- 1. Users
