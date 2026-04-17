@@ -2,7 +2,8 @@
 -- QueryGen MySQL Migration (Full Setup)
 -- Run with: mysql -u root -paditya test < mysql_migration.sql
 -- ============================================================
-
+create schema querygen;
+use querygen;
 -- 1. Users
 CREATE TABLE IF NOT EXISTS users (
     id    INT AUTO_INCREMENT PRIMARY KEY,
@@ -10,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     role  VARCHAR(20) NOT NULL DEFAULT 'viewer',
     CONSTRAINT chk_users_role CHECK (role IN ('admin', 'auditor_read', 'auditor_write', 'viewer'))
 );
+
 
 -- 2. Query Sessions
 CREATE TABLE IF NOT EXISTS query_sessions (

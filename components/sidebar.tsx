@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Database, History, Settings, BarChart3, LogOut, ShieldCheck } from 'lucide-react'
+import { Home, Database, History, Settings, BarChart3, LogOut, ShieldCheck, FileText } from 'lucide-react'
 import { useSession, signOut } from 'next-auth/react'
 
 type UserRole = "admin" | "auditor_read" | "auditor_write" | "viewer";
@@ -33,6 +33,7 @@ export function Sidebar() {
     { href: '/database', label: 'Database', icon: Database },
     { href: '/history', label: 'History', icon: History },
     { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
+    { href: '/report', label: 'Report', icon: FileText },
     { href: '/settings', label: 'Settings', icon: Settings },
     ...(isAdmin ? [{ href: '/admin', label: 'Admin Panel', icon: ShieldCheck }] : []),
   ]
