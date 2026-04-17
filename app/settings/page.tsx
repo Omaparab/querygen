@@ -24,7 +24,7 @@ export default function Settings() {
         const savedUrl = await getConnectionUrl()
         setApiKey(savedUrl)
       } catch {
-        setApiKey('mysql://root:aditya@localhost:3306/test')
+        setApiKey('mysql://test_readernew:dcb7bc8caf37a64bec926a9b2185de3144b09eea@mednzz.h.filess.io:3306/test_readernew')
       } finally {
         setIsLoadingUrl(false)
       }
@@ -77,8 +77,8 @@ export default function Settings() {
                     key={t}
                     onClick={() => handleThemeChange(t)}
                     className={`border px-4 py-2 capitalize transition-colors ${theme === t
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border hover:bg-secondary'
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border hover:bg-secondary'
                       }`}
                   >
                     {t}
@@ -165,8 +165,8 @@ export default function Settings() {
                   <button
                     onClick={() => setAutoSave(!autoSave)}
                     className={`h-6 w-11 border transition-colors ${autoSave
-                        ? 'border-primary bg-primary'
-                        : 'border-border bg-secondary'
+                      ? 'border-primary bg-primary'
+                      : 'border-border bg-secondary'
                       }`}
                   >
                     <div
@@ -180,8 +180,8 @@ export default function Settings() {
                   <button
                     onClick={() => setNotifications(!notifications)}
                     className={`h-6 w-11 border transition-colors ${notifications
-                        ? 'border-primary bg-primary'
-                        : 'border-border bg-secondary'
+                      ? 'border-primary bg-primary'
+                      : 'border-border bg-secondary'
                       }`}
                   >
                     <div

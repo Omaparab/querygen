@@ -5,7 +5,7 @@ import pool from "./db";
 import { auth } from "@/auth";
 import { parseConnectionUrl } from "./db-utils";
 
-const DEFAULT_DATABASE_URL = "mysql://root:aditya@localhost:3306/test";
+const DEFAULT_DATABASE_URL = "mysql://qg_funsheepby:9465d000d3589b0d24eb5dd7d6214e49d5838610@s-etb4.h.filess.io:3306/qg_funsheepby";
 
 /**
  * Get the user's saved database connection URL from url_history,
@@ -67,7 +67,7 @@ export async function fetchTables(): Promise<{
     userPool = mysql.createPool({
       ...config,
       waitForConnections: true,
-      connectionLimit: 5,
+      connectionLimit: 2,
     });
 
     // Test the connection
@@ -181,7 +181,7 @@ export async function getDynamicSchema(): Promise<{
     userPool = mysql.createPool({
       ...config,
       waitForConnections: true,
-      connectionLimit: 5,
+      connectionLimit: 2,
     });
 
     const db = config.database;

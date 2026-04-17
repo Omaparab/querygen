@@ -123,7 +123,7 @@ export async function executeQuery(sql: string): Promise<ExecuteResult> {
 
     const connectionUrl = await getConnectionUrl();
     const config = parseConnectionUrl(connectionUrl);
-    userPool = mysql.createPool({ ...config, waitForConnections: true, connectionLimit: 5 });
+    userPool = mysql.createPool({ ...config, waitForConnections: true, connectionLimit: 2 });
 
     const [rows, fields] = await userPool.query(finalSQL) as [any[], any];
 
