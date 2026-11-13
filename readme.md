@@ -1,4 +1,4 @@
-# Enterprise ai query layer for compliance & audit
+# Enterprise AI Query Layer for Compliance & Audit
 
 ## problem statement
 most compliance teams rely on engineers to query databases, delaying crucial reports and audits. this bottleneck slows down regulatory responses and internal review processes.
